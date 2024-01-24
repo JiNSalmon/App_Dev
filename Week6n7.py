@@ -5,7 +5,7 @@ from pymongo import MongoClient
 app = Flask(__name__)
 auth = HTTPBasicAuth()
 
-mongo_client = MongoClient('mongodb://localhost:27017/')
+mongo_client = MongoClient('mongodb+srv://new-user1:<Y1AGgX1NGUy1ZHwg>@cluster0.fdsqycw.mongodb.net/')
 db = mongo_client['student_db']
 students_collection = db['students']
 
