@@ -1,72 +1,113 @@
-from flask import Flask, request, jsonify, abort
-from flask_httpauth import HTTPBasicAuth
-from pymongo import MongoClient
+from flask import Flask,jsonify,request
+from pymongo.mongo_client import MongoClient
+from flask_basicauth import BasicAuth
+import certifi
 
 app = Flask(__name__)
-auth = HTTPBasicAuth()
+app.config['BASIC_AUTH_USERNAME'] = 'name'
+app.config['BASIC_AUTH_PASSWORD'] = 'pass'
+basic_auth = BasicAuth(app)
 
-mongo_client = MongoClient('mongodb+srv://new-user1:<Y1AGgX1NGUy1ZHwg>@cluster0.fdsqycw.mongodb.net/')
-db = mongo_client['student_db']
-students_collection = db['students']
+ca = certifi.where()
+uri = "mongodb+srv://new-user1:Y1AGgX1NGUy1ZHwg@cluster0.fdsqycw.mongodb.net/"
 
-users = {
-    'username': 'password',
-}
+try:
+    client = MongoClient(uri, tlsCAFile=ca)
+    client.admin.command('ping')
+    print("Pinged your deployment. You successfully connected to MongoDB!")
+except Exception as e:
+    print(e)
 
-@auth.verify_password
-def verify_password(username, password):
-    if username in users and users[username] == password:
-        return username
+@app.route("/")
+def Greet():
+    return "<p>Welcome to Student Management AP</p>"
 
-@app.route('/')
-def welcome():
-    return 'Welcome to Student Management API'
+@app.route("/students",methods=["GET"])
+@basic_auth.required
+def get_all_student():
+    try:
+        db = client["students"]
+        collection = db["std_info"]
+        all_student = list(collection.find())
+        return jsonify(all_student)
+    except Exception as e:
+        print(e)
 
-@app.route('/students', methods=['GET'])
-@auth.login_required
-def get_all_students():
-    all_students = list(students_collection.find({}, {'_id': 0}))
-    return jsonify(all_students)
+@app.route("/students/<string:std_id>", methods=["GET"])
+def get_id_student(std_id):
+    try:
+        db = client["students"]
+        collection = db["std_info"]
+        all_student = list(collection.find())
+        std = next((s for s in all_student if s["_id"] == std_id), None)
+        if(std):
+            return jsonify(std)
+        else:
+            return jsonify({"error":"Student not found"}), 404
+    except Exception as e:
+        print(e)
 
-@app.route('/students/<int:std_id>', methods=['GET'])
-@auth.login_required
-def get_student(std_id):
-    student = students_collection.find_one({'id': std_id}, {'_id': 0})
-    if student:
-        return jsonify(student)
-    else:
-        abort(404, {"error": "Student not found"})
+@app.route("/students", methods=["POST"])
+def add_new_student():
+    try:
+        db = client["students"]
+        collection = db["std_info"]
+        data = request.get_json()
+        new_student={
+            "_id":data["_id"],
+            "fullname": data["fullname"],
+            "major": data["major"],
+            "gpa": data["gpa"]
+        }
+        all_student = list(collection.find())
+        if(next((s for s in all_student if s["_id"] == data["_id"]), None)):
+            return jsonify( {"error":"Cannot create new student"}),500
+        else:
+            collection.insert_one(new_student)
+            return jsonify(new_student),200
+        
+    except Exception as e:
+        print(e)
 
-@app.route('/students', methods=['POST'])
-@auth.login_required
-def create_student():
-    new_student_data = request.json
-    existing_student = students_collection.find_one({'id': new_student_data['id']})
-    if existing_student:
-        abort(500, {"error": "Cannot create new student"})
-    else:
-        students_collection.insert_one(new_student_data)
-        return jsonify(new_student_data), 200
-
-@app.route('/students/<int:std_id>', methods=['PUT'])
-@auth.login_required
+@app.route("/students/<string:std_id>", methods=["PUT"])
 def update_student(std_id):
-    updated_student_data = request.json
-    existing_student = students_collection.find_one({'id': std_id})
-    if existing_student:
-        students_collection.update_one({'id': std_id}, {'$set': updated_student_data})
-        return jsonify(updated_student_data), 200
-    else:
-        abort(404, {"error": "Student not found"})
+    try:
+        db = client["students"]
+        collection = db["std_info"]
+        data = request.get_json()
+        new_fullname = {"$set":{"fullname":data["fullname"]}}
+        new_major = {"$set":{"major":data["major"]}}
+        new_gpa = {"$set":{"gpa":data["gpa"]}}
+        all_student = list(collection.find())
+        if(next((s for s in all_student if s["_id"] == data["_id"]), None)):
+            print("Found")
+            collection.update_one({"_id" : std_id}, new_fullname)
+            collection.update_one({"_id" : std_id}, new_major)
+            collection.update_one({"_id" : std_id}, new_gpa)
+            return jsonify(data),200
+        else:
+            return jsonify({"error":"Student not found"}),404
+        
+    except Exception as e:
+        print(e)
 
-@app.route('/students/<int:std_id>', methods=['DELETE'])
-@auth.login_required
+@app.route("/students/<string:std_id>", methods=["DELETE"])
 def delete_student(std_id):
-    result = students_collection.delete_one({'id': std_id})
-    if result.deleted_count > 0:
-        return jsonify({"message": "Student deleted successfully"}), 200
-    else:
-        abort(404, {"error": "Student not found"})
+    try:
+        db = client["students"]
+        collection = db["std_info"]
+        all_student = list(collection.find())
+        if(next((s for s in all_student if s["_id"] == std_id), None)):
+            collection.delete_one({"_id":std_id})
+            return jsonify({"message":"Student deleted successfully"}),200
+        else:
+            return jsonify({"error":"Student not found"}),404
+        
+    except Exception as e:
+        print(e)
 
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__=="__main__":
+    app.run(host="0.0.0.0",port=5000,debug=True)
+
+print("disconnected")
+client.close()
